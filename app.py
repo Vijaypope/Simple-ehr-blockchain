@@ -8,8 +8,7 @@ import pandas as pd
 import time
 import plotly.express as px
 import plotly.graph_objects as go
-import sqlite3
-import pickle
+import random
 
 # Configure Streamlit page
 st.set_page_config(
@@ -82,6 +81,15 @@ st.markdown("""
         box-shadow: 0 5px 20px rgba(0,0,0,0.15);
     }
     
+    .block-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
     /* Success message styling */
     .success-message {
         background: linear-gradient(90deg, #56ab2f 0%, #a8e6cf 100%);
@@ -92,19 +100,36 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Block styling */
-    .blockchain-block {
+    /* Blockchain visualization */
+    .block-chain {
+        display: flex;
+        align-items: center;
+        margin: 2rem 0;
+    }
+    
+    .block {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 1rem;
         border-radius: 10px;
-        margin: 0.5rem 0;
-        border-left: 4px solid #4CAF50;
+        margin: 0 10px;
+        min-width: 150px;
+        text-align: center;
+        position: relative;
     }
     
-    .genesis-block {
-        background: linear-gradient(135deg, #FF6B6B 0%, #4ECDC4 100%);
-        border-left: 4px solid #FF6B6B;
+    .block::after {
+        content: '→';
+        position: absolute;
+        right: -25px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1.5rem;
+        color: #667eea;
+    }
+    
+    .block:last-child::after {
+        display: none;
     }
     
     /* Loading animation */
@@ -123,145 +148,29 @@ st.markdown("""
         margin: 2rem auto;
     }
     
-    /* Security features */
-    .security-badge {
-        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+    .data-initialization {
+        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
         color: white;
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
+        padding: 1rem;
+        border-radius: 5px;
+        text-align: center;
+        font-weight: bold;
+        margin: 1rem 0;
+    }
+    
+    .severity-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 15px;
         font-size: 0.8rem;
         font-weight: bold;
     }
+    
+    .severity-low { background-color: #28a745; color: white; }
+    .severity-moderate { background-color: #ffc107; color: black; }
+    .severity-high { background-color: #fd7e14; color: white; }
+    .severity-critical { background-color: #dc3545; color: white; }
 </style>
 """, unsafe_allow_html=True)
-
-# SQLite Database Functions
-def init_database():
-    """Initialize SQLite database for blockchain storage"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    # Create table for blockchain data
-    c.execute('''CREATE TABLE IF NOT EXISTS blockchain_data
-                 (id INTEGER PRIMARY KEY,
-                  blockchain_state BLOB,
-                  timestamp DATETIME,
-                  created_date DATE)''')
-    
-    # Create table for individual medical records (for easier querying)
-    c.execute('''CREATE TABLE IF NOT EXISTS medical_records
-                 (id INTEGER PRIMARY KEY,
-                  patient_id TEXT,
-                  patient_name TEXT,
-                  age INTEGER,
-                  gender TEXT,
-                  diagnosis TEXT,
-                  treatment TEXT,
-                  doctor TEXT,
-                  hospital TEXT,
-                  severity TEXT,
-                  block_index INTEGER,
-                  block_hash TEXT,
-                  timestamp DATETIME,
-                  created_date DATE)''')
-    
-    conn.commit()
-    conn.close()
-
-def save_blockchain_to_db(blockchain):
-    """Save the entire blockchain state to database"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    # Serialize the blockchain object
-    blockchain_data = pickle.dumps(blockchain)
-    current_time = datetime.datetime.now()
-    current_date = datetime.date.today()
-    
-    # Insert new blockchain state
-    c.execute("INSERT INTO blockchain_data (blockchain_state, timestamp, created_date) VALUES (?, ?, ?)",
-              (blockchain_data, current_time, current_date))
-    
-    conn.commit()
-    conn.close()
-
-def load_blockchain_from_db():
-    """Load the most recent blockchain state from database"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    # Get the most recent blockchain state
-    week_ago = datetime.date.today() - datetime.timedelta(days=7)
-    c.execute("SELECT blockchain_state FROM blockchain_data WHERE created_date > ? ORDER BY timestamp DESC LIMIT 1", (week_ago,))
-    result = c.fetchone()
-    
-    conn.close()
-    
-    if result:
-        return pickle.loads(result[0])
-    else:
-        return None
-
-def save_medical_record_to_db(record_data, block_index, block_hash):
-    """Save individual medical record to database for easy querying"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    current_time = datetime.datetime.now()
-    current_date = datetime.date.today()
-    
-    c.execute("""INSERT INTO medical_records 
-                 (patient_id, patient_name, age, gender, diagnosis, treatment, 
-                  doctor, hospital, severity, block_index, block_hash, timestamp, created_date)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-              (record_data['patient_id'], record_data['patient_name'], record_data['age'],
-               record_data['gender'], record_data['diagnosis'], record_data['treatment'],
-               record_data['doctor'], record_data['hospital'], record_data['severity'],
-               block_index, block_hash, current_time, current_date))
-    
-    conn.commit()
-    conn.close()
-
-def cleanup_old_data():
-    """Remove data older than 7 days"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    week_ago = datetime.date.today() - datetime.timedelta(days=7)
-    
-    # Clean up old blockchain states (keep only the most recent one within the week)
-    c.execute("DELETE FROM blockchain_data WHERE created_date < ?", (week_ago,))
-    
-    # Clean up old medical records
-    c.execute("DELETE FROM medical_records WHERE created_date < ?", (week_ago,))
-    
-    conn.commit()
-    conn.close()
-
-def get_database_stats():
-    """Get statistics about the database"""
-    conn = sqlite3.connect('ehr_blockchain.db')
-    c = conn.cursor()
-    
-    # Get record count
-    c.execute("SELECT COUNT(*) FROM medical_records")
-    record_count = c.fetchone()[0]
-    
-    # Get blockchain states count
-    c.execute("SELECT COUNT(*) FROM blockchain_data")
-    blockchain_states = c.fetchone()[0]
-    
-    # Get oldest record date
-    c.execute("SELECT MIN(created_date) FROM medical_records")
-    oldest_record = c.fetchone()[0]
-    
-    conn.close()
-    
-    return {
-        'total_records_in_db': record_count,
-        'blockchain_states': blockchain_states,
-        'oldest_record_date': oldest_record
-    }
 
 @dataclass
 class MedicalRecord:
@@ -345,13 +254,15 @@ class EnhancedEHRBlockchain:
         """Get the most recent block"""
         return self.chain[-1]
     
-    def add_medical_record(self, record: MedicalRecord) -> bool:
-        """Add a new medical record to the blockchain with mining animation"""
+    def add_medical_record(self, record: MedicalRecord, show_mining: bool = True) -> bool:
+        """Add a new medical record to the blockchain with optional mining animation"""
         try:
-            # Show mining process
-            mining_placeholder = st.empty()
-            mining_placeholder.markdown('<div class="loading-spinner"></div>', unsafe_allow_html=True)
-            time.sleep(1)  # Simulate mining time
+            # Show mining process only if requested
+            mining_placeholder = None
+            if show_mining:
+                mining_placeholder = st.empty()
+                mining_placeholder.markdown('<div class="loading-spinner"></div>', unsafe_allow_html=True)
+                time.sleep(1)  # Simulate mining time
             
             new_block = Block(
                 index=len(self.chain),
@@ -361,15 +272,17 @@ class EnhancedEHRBlockchain:
             )
             self.chain.append(new_block)
             
-            # Save to database
-            save_medical_record_to_db(record.to_dict(), new_block.index, new_block.hash)
-            save_blockchain_to_db(self)
-            
-            mining_placeholder.empty()
+            if mining_placeholder:
+                mining_placeholder.empty()
             return True
         except Exception as e:
-            st.error(f"Error adding record: {str(e)}")
+            if show_mining:
+                st.error(f"Error adding record: {str(e)}")
             return False
+    
+    def add_medical_record_silent(self, record: MedicalRecord) -> bool:
+        """Add a medical record without UI feedback (for bulk operations)"""
+        return self.add_medical_record(record, show_mining=False)
     
     def get_all_records(self) -> List[Dict]:
         """Get all medical records from the blockchain"""
@@ -417,28 +330,255 @@ class EnhancedEHRBlockchain:
         
         return True
 
-# Initialize database and blockchain in session state
-if 'db_initialized' not in st.session_state:
-    init_database()
-    st.session_state.db_initialized = True
+def get_sample_medical_data():
+    """Generate realistic sample medical data for 15 patients"""
+    sample_data = [
+        {
+            "patient_id": "P001",
+            "patient_name": "Sam",
+            "age": 45,
+            "gender": "Male",
+            "diagnosis": "Hypertension with mild cardiac complications",
+            "treatment": "ACE inhibitors, lifestyle modifications, regular monitoring",
+            "doctor": "Dr. Deepika",
+            "hospital": "City General Hospital",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P002",
+            "patient_name": "Sinthiya",
+            "age": 32,
+            "gender": "Female",
+            "diagnosis": "Type 2 Diabetes Mellitus",
+            "treatment": "Metformin, dietary counseling, glucose monitoring",
+            "doctor": "Dr. Michael Chen",
+            "hospital": "Metropolitan Medical Center",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P003",
+            "patient_name": "Naveen",
+            "age": 67,
+            "gender": "Male",
+            "diagnosis": "Coronary Artery Disease",
+            "treatment": "Stent placement, dual antiplatelet therapy, cardiac rehabilitation",
+            "doctor": "Dr. Amanda Rodriguez",
+            "hospital": "Heart Care Institute",
+            "severity": "High"
+        },
+        {
+            "patient_id": "P004",
+            "patient_name": "Ramya",
+            "age": 28,
+            "gender": "Female",
+            "diagnosis": "Asthma with seasonal allergies",
+            "treatment": "Inhaled corticosteroids, bronchodilators, allergy management",
+            "doctor": "Dr. James Park",
+            "hospital": "City General Hospital",
+            "severity": "Low"
+        },
+        {
+            "patient_id": "P005",
+            "patient_name": "Mari Muthu",
+            "age": 52,
+            "gender": "Male",
+            "diagnosis": "Chronic Kidney Disease Stage 3",
+            "treatment": "ACE inhibitors, dietary restrictions, regular lab monitoring",
+            "doctor": "Dr. Rachel Kim",
+            "hospital": "Nephrology Specialists",
+            "severity": "High"
+        },
+        {
+            "patient_id": "P006",
+            "patient_name": "Sangeetha",
+            "age": 39,
+            "gender": "Female",
+            "diagnosis": "Rheumatoid Arthritis",
+            "treatment": "Methotrexate, biologics, physical therapy",
+            "doctor": "Dr. Thomas Anderson",
+            "hospital": "Rheumatology Center",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P007",
+            "patient_name": "Vikram",
+            "age": 41,
+            "gender": "Male",
+            "diagnosis": "Major Depressive Disorder",
+            "treatment": "SSRIs, cognitive behavioral therapy, lifestyle counseling",
+            "doctor": "Dr. Susan Miller",
+            "hospital": "Mental Health Associates",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P008",
+            "patient_name": "Rohini",
+            "age": 55,
+            "gender": "Female",
+            "diagnosis": "Osteoporosis with vertebral fractures",
+            "treatment": "Bisphosphonates, calcium supplements, weight-bearing exercises",
+            "doctor": "Dr. Kevin Wong",
+            "hospital": "Bone Health Clinic",
+            "severity": "High"
+        },
+        {
+            "patient_id": "P009",
+            "patient_name": "Subramani",
+            "age": 36,
+            "gender": "Male",
+            "diagnosis": "Gastroesophageal Reflux Disease (GERD)",
+            "treatment": "Proton pump inhibitors, dietary modifications, weight management",
+            "doctor": "Dr. Maria Gonzalez",
+            "hospital": "Digestive Health Center",
+            "severity": "Low"
+        },
+        {
+            "patient_id": "P010",
+            "patient_name": "Anitha",
+            "age": 29,
+            "gender": "Female",
+            "diagnosis": "Migraine with aura",
+            "treatment": "Triptans, preventive medications, trigger avoidance",
+            "doctor": "Dr. Daniel Lee",
+            "hospital": "Neurology Institute",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P011",
+            "patient_name": "Raja",
+            "age": 61,
+            "gender": "Male",
+            "diagnosis": "Chronic Obstructive Pulmonary Disease (COPD)",
+            "treatment": "Bronchodilators, inhaled steroids, pulmonary rehabilitation",
+            "doctor": "Dr. Lisa Chen",
+            "hospital": "Pulmonary Care Center",
+            "severity": "High"
+        },
+        {
+            "patient_id": "P012",
+            "patient_name": "Jothika",
+            "age": 43,
+            "gender": "Female",
+            "diagnosis": "Hypothyroidism",
+            "treatment": "Levothyroxine therapy, regular TSH monitoring",
+            "doctor": "Dr. Robert Kim",
+            "hospital": "Endocrine Specialists",
+            "severity": "Low"
+        },
+        {
+            "patient_id": "P013",
+            "patient_name": "Mani",
+            "age": 38,
+            "gender": "Male",
+            "diagnosis": "Anxiety Disorder with panic attacks",
+            "treatment": "Benzodiazepines, SSRIs, cognitive behavioral therapy",
+            "doctor": "Dr. Nancy Davis",
+            "hospital": "Mental Health Associates",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P014",
+            "patient_name": "Renuka",
+            "age": 50,
+            "gender": "Female",
+            "diagnosis": "Fibromyalgia syndrome",
+            "treatment": "Pregabalin, physical therapy, stress management",
+            "doctor": "Dr. Mark Wilson",
+            "hospital": "Pain Management Clinic",
+            "severity": "Moderate"
+        },
+        {
+            "patient_id": "P015",
+            "patient_name": "Kumar",
+            "age": 72,
+            "gender": "Male",
+            "diagnosis": "Alzheimer's Disease - Early Stage",
+            "treatment": "Cholinesterase inhibitors, cognitive stimulation, family support",
+            "doctor": "Dr. Elizabeth Brown",
+            "hospital": "Memory Care Center",
+            "severity": "Critical"
+        }
+    ]
+    return sample_data
 
+def initialize_blockchain_with_data():
+    """Initialize blockchain with sample patient data"""
+    if 'blockchain_initialized' not in st.session_state:
+        st.session_state.blockchain_initialized = False
+    
+    if not st.session_state.blockchain_initialized:
+        sample_data = get_sample_medical_data()
+        
+        # Show initialization message
+        init_placeholder = st.empty()
+        init_placeholder.markdown("""
+        <div class="data-initialization">
+            🔄 Initializing blockchain with existing patient records...
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Add sample records to blockchain
+        for i, data in enumerate(sample_data):
+            # Create timestamps with some variation (simulate different admission times)
+            base_time = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 30))
+            timestamp = base_time + datetime.timedelta(hours=random.randint(0, 23), minutes=random.randint(0, 59))
+            
+            record = MedicalRecord(
+                patient_id=data["patient_id"],
+                patient_name=data["patient_name"],
+                age=data["age"],
+                gender=data["gender"],
+                diagnosis=data["diagnosis"],
+                treatment=data["treatment"],
+                doctor=data["doctor"],
+                hospital=data["hospital"],
+                severity=data["severity"],
+                timestamp=str(timestamp)
+            )
+            
+            st.session_state.blockchain.add_medical_record_silent(record)
+            
+            # Update progress
+            progress = (i + 1) / len(sample_data)
+            init_placeholder.markdown(f"""
+            <div class="data-initialization">
+                🔄 Initializing blockchain... {i+1}/15 records added ({progress*100:.0f}%)
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Mark as initialized
+        st.session_state.blockchain_initialized = True
+        
+        # Show completion message
+        time.sleep(0.5)
+        init_placeholder.markdown("""
+        <div class="success-message">
+            ✅ Blockchain initialized with 15 patient records!
+        </div>
+        """, unsafe_allow_html=True)
+        time.sleep(2)
+        init_placeholder.empty()
+
+# Initialize blockchain in session state
 if 'blockchain' not in st.session_state:
-    # Try to load blockchain from database first
-    loaded_blockchain = load_blockchain_from_db()
-    if loaded_blockchain:
-        st.session_state.blockchain = loaded_blockchain
-        st.session_state.loaded_from_db = True
-    else:
-        st.session_state.blockchain = EnhancedEHRBlockchain()
-        st.session_state.loaded_from_db = False
+    st.session_state.blockchain = EnhancedEHRBlockchain()
 
 def main():
+    # Initialize blockchain with sample data
+    initialize_blockchain_with_data()
+    
     # Animated header
     st.markdown('<h1 class="animated-header">🏥 EHR Blockchain System</h1>', unsafe_allow_html=True)
     
-    # Show database status
-    if st.session_state.get('loaded_from_db', False):
-        st.success("🗄 Data loaded from database - your records are persistent!")
+    # Show system status
+    stats = st.session_state.blockchain.get_statistics()
+    if stats['total_records'] > 0:
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); 
+                    color: white; padding: 0.5rem; border-radius: 5px; text-align: center; margin-bottom: 1rem;">
+            💾 System Status: {stats['total_records']} patient records loaded in blockchain
+        </div>
+        """, unsafe_allow_html=True)
     
     # Sidebar navigation with icons
     st.sidebar.markdown("### 🚀 Navigation")
@@ -446,23 +586,11 @@ def main():
         "🏠 Dashboard": "Dashboard",
         "📝 Add Record": "Add Record", 
         "🔍 Patient Records": "Patient Records",
-        "⛓ Blockchain Explorer": "Blockchain Explorer",
-        "🔐 Security Audit": "Security Audit",
-        "🗄 Database Management": "Database Management"
+        "⛓️ Blockchain Explorer": "Blockchain Explorer"
     }
     
     selected_page = st.sidebar.selectbox("Choose a page:", list(pages.keys()))
     page = pages[selected_page]
-    
-    # Blockchain info in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### ⛓ Blockchain Info")
-    st.sidebar.metric("Blocks", len(st.session_state.blockchain.chain))
-    st.sidebar.metric("Records", len(st.session_state.blockchain.get_all_records()))
-    
-    is_valid = st.session_state.blockchain.validate_chain()
-    status_color = "🟢" if is_valid else "🔴"
-    st.sidebar.markdown(f"**Status:** {status_color} {'Valid' if is_valid else 'Invalid'}")
     
     # Page routing
     if page == "Dashboard":
@@ -473,171 +601,6 @@ def main():
         patient_records_page()
     elif page == "Blockchain Explorer":
         blockchain_explorer_page()
-    elif page == "Security Audit":
-        security_audit_page()
-    elif page == "Database Management":
-        database_management_page()
-
-def security_audit_page():
-    """New security audit page"""
-    st.markdown("## 🔐 Security Audit")
-    
-    blockchain = st.session_state.blockchain
-    
-    # Validate blockchain
-    is_valid = blockchain.validate_chain()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if is_valid:
-            st.success("✅ Blockchain Integrity: VALID")
-        else:
-            st.error("❌ Blockchain Integrity: COMPROMISED")
-    
-    with col2:
-        st.info(f"🔗 Total Blocks: {len(blockchain.chain)}")
-    
-    # Security metrics
-    st.markdown("### 🛡 Security Metrics")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>🔒 Encryption</h3>
-            <p>SHA-256 Hashing</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3>⛏ Difficulty</h3>
-            <p>Level {blockchain.difficulty}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="metric-card">
-            <h3>🔗 Immutable</h3>
-            <p>Tamper-Proof</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Block verification details
-    st.markdown("### 🔍 Block Verification")
-    
-    for i, block in enumerate(blockchain.chain):
-        is_genesis = i == 0
-        
-        # Verify this block
-        block_valid = True
-        validation_issues = []
-        
-        if not is_genesis:
-            if block.previous_hash != blockchain.chain[i-1].hash:
-                block_valid = False
-                validation_issues.append("Previous hash mismatch")
-        
-        if block.hash != block.calculate_hash():
-            block_valid = False
-            validation_issues.append("Hash calculation mismatch")
-        
-        status_icon = "✅" if block_valid else "❌"
-        block_type = "Genesis Block" if is_genesis else f"Block {block.index}"
-        
-        with st.expander(f"{status_icon} {block_type} - Hash: {block.hash[:16]}..."):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"**Index:** {block.index}")
-                st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
-                st.markdown(f"**Nonce:** {block.nonce}")
-                st.markdown(f"**Hash:** `{block.hash}`")
-            
-            with col2:
-                st.markdown(f"**Previous Hash:** `{block.previous_hash}`")
-                if validation_issues:
-                    st.error("Issues found:")
-                    for issue in validation_issues:
-                        st.error(f"- {issue}")
-                else:
-                    st.success("Block is valid")
-            
-            if not is_genesis and "patient_name" in block.data:
-                st.markdown("**Patient Data (Encrypted View):**")
-                st.json(block.data)
-
-def database_management_page():
-    """Database management page"""
-    st.markdown("## 🗄 Database Management")
-    
-    # Get database statistics
-    db_stats = get_database_stats()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("📊 Records in DB", db_stats['total_records_in_db'])
-    
-    with col2:
-        st.metric("💾 Blockchain States", db_stats['blockchain_states'])
-    
-    with col3:
-        if db_stats['oldest_record_date']:
-            st.metric("📅 Oldest Record", db_stats['oldest_record_date'])
-        else:
-            st.metric("📅 Oldest Record", "No records")
-    
-    st.markdown("---")
-    
-    # Database operations
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("💾 Save Current State", help="Save current blockchain state to database"):
-            save_blockchain_to_db(st.session_state.blockchain)
-            st.success("Blockchain state saved to database!")
-    
-    with col2:
-        if st.button("🔄 Load from Database", help="Load the most recent blockchain state"):
-            loaded_blockchain = load_blockchain_from_db()
-            if loaded_blockchain:
-                st.session_state.blockchain = loaded_blockchain
-                st.success("Blockchain loaded from database!")
-                st.rerun()
-            else:
-                st.warning("No recent blockchain state found in database")
-    
-    st.markdown("---")
-    
-    # Cleanup operations
-    st.markdown("### 🧹 Cleanup Operations")
-    st.warning("⚠ Cleanup will remove data older than 7 days")
-    
-    if st.button("🗑 Cleanup Old Data", help="Remove data older than 7 days"):
-        cleanup_old_data()
-        st.success("Old data cleaned up successfully!")
-    
-    # Database info
-    st.markdown("---")
-    st.markdown("### ℹ Database Information")
-    st.info("""
-    **Database Features:**
-    - 📊 Automatic persistence for at least 7 days
-    - 💾 Blockchain state serialization
-    - 🔍 Individual record storage for fast queries
-    - 🧹 Automatic cleanup of old data
-    - 🔄 Load/Save blockchain states
-    
-    **Files Created:**
-    - ehr_blockchain.db - SQLite database file
-    
-    Your data is automatically saved when you add new records!
-    """)
 
 def dashboard_page():
     """Enhanced dashboard with statistics and visualizations"""
@@ -645,7 +608,6 @@ def dashboard_page():
     
     # Get statistics
     stats = st.session_state.blockchain.get_statistics()
-    db_stats = get_database_stats()
     
     # Metrics row
     col1, col2, col3, col4 = st.columns(4)
@@ -669,7 +631,7 @@ def dashboard_page():
     with col3:
         st.markdown(f"""
         <div class="metric-card">
-            <h3>⛓ {len(st.session_state.blockchain.chain)}</h3>
+            <h3>⛓️ {len(st.session_state.blockchain.chain)}</h3>
             <p>Blockchain Blocks</p>
         </div>
         """, unsafe_allow_html=True)
@@ -683,14 +645,6 @@ def dashboard_page():
             <p>Chain Status</p>
         </div>
         """, unsafe_allow_html=True)
-    
-    # Database status
-    st.markdown("### 🗄 Database Status")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Records in Database", db_stats['total_records_in_db'])
-    with col2:
-        st.metric("Saved States", db_stats['blockchain_states'])
     
     # Visualizations
     if stats['total_records'] > 0:
@@ -726,6 +680,36 @@ def dashboard_page():
                 )
                 fig_line.update_layout(height=400)
                 st.plotly_chart(fig_line, use_container_width=True)
+        
+        # Hospital and Doctor distribution
+        st.markdown("---")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            # Hospital distribution
+            hospital_counts = pd.DataFrame(records)['hospital'].value_counts()
+            fig_hospital = px.bar(
+                x=hospital_counts.values,
+                y=hospital_counts.index,
+                orientation='h',
+                title="🏥 Records by Hospital",
+                color=hospital_counts.values,
+                color_continuous_scale="Blues"
+            )
+            fig_hospital.update_layout(height=400, showlegend=False)
+            st.plotly_chart(fig_hospital, use_container_width=True)
+        
+        with col4:
+            # Age distribution
+            ages = [record['age'] for record in records]
+            fig_age = px.histogram(
+                x=ages,
+                nbins=10,
+                title="👶 Age Distribution of Patients",
+                color_discrete_sequence=['#667eea']
+            )
+            fig_age.update_layout(height=400)
+            st.plotly_chart(fig_age, use_container_width=True)
     
     # Recent activity
     st.markdown("---")
@@ -753,7 +737,7 @@ def add_record_page():
         col1, col2 = st.columns(2)
         
         with col1:
-            patient_id = st.text_input("Patient ID*", placeholder="P001", help="Unique patient identifier")
+            patient_id = st.text_input("Patient ID*", placeholder="P016", help="Unique patient identifier")
             patient_name = st.text_input("Patient Name*", placeholder="John Doe")
             age = st.number_input("Age*", min_value=0, max_value=150, value=30)
         
@@ -789,11 +773,11 @@ def add_record_page():
                     timestamp=str(datetime.datetime.now())
                 )
                 
-                st.markdown("### ⛏ Mining Block...")
+                st.markdown("### ⛏️ Mining Block...")
                 if st.session_state.blockchain.add_medical_record(record):
                     st.markdown("""
                     <div class="success-message">
-                        ✅ Medical record successfully added to blockchain and saved to database!
+                        ✅ Medical record successfully added to blockchain!
                     </div>
                     """, unsafe_allow_html=True)
                     st.balloons()
@@ -824,8 +808,10 @@ def patient_records_page():
         else:
             filtered_records = records
         
-        # Display filtering options
+        # Filters
+        st.markdown("### 🎛️ Filters")
         col1, col2, col3 = st.columns(3)
+        
         with col1:
             severity_filter = st.selectbox("Filter by Severity:", ["All"] + list(set([r['severity'] for r in records])))
         with col2:
@@ -844,107 +830,178 @@ def patient_records_page():
         st.markdown(f"### 📋 Found {len(filtered_records)} record(s)")
         
         # Display records
-        for record in filtered_records:
-            severity_color = {
-                "Low": "#28a745",
-                "Moderate": "#ffc107", 
-                "High": "#fd7e14",
-                "Critical": "#dc3545"
-            }.get(record['severity'], "#6c757d")
-            
-            st.markdown(f"""
-            <div class="record-card">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h4>👤 {record['patient_name']} ({record['patient_id']})</h4>
-                    <span class="security-badge" style="background-color: {severity_color};">{record['severity']}</span>
-                </div>
-                <p><strong>Age:</strong> {record['age']} | <strong>Gender:</strong> {record['gender']}</p>
-                <p><strong>🏥 Hospital:</strong> {record['hospital']} | <strong>👨‍⚕️ Doctor:</strong> {record['doctor']}</p>
-                <p><strong>📊 Diagnosis:</strong> {record['diagnosis']}</p>
-                <p><strong>💊 Treatment:</strong> {record['treatment']}</p>
-                <p><strong>⏰ Recorded:</strong> {record['timestamp'][:19]}</p>
-                <p><strong>🔗 Block:</strong> #{record['block_index']} | <strong>Hash:</strong> {record['block_hash'][:16]}...</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
+        if filtered_records:
+            for i, record in enumerate(filtered_records):
+                with st.expander(f"📄 {record['patient_name']} ({record['patient_id']}) - {record['diagnosis'][:50]}..."):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        **Patient Information:**
+                        - **ID:** {record['patient_id']}
+                        - **Name:** {record['patient_name']}
+                        - **Age:** {record['age']} years
+                        - **Gender:** {record['gender']}
+                        """)
+                        
+                        st.markdown(f"""
+                        **Medical Details:**
+                        - **Diagnosis:** {record['diagnosis']}
+                        - **Severity:** <span class="severity-badge severity-{record['severity'].lower()}">{record['severity']}</span>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        **Care Information:**
+                        - **Doctor:** {record['doctor']}
+                        - **Hospital:** {record['hospital']}
+                        - **Treatment:** {record['treatment']}
+                        - **Date:** {record['timestamp'][:19]}
+                        """)
+                        
+                        st.markdown(f"""
+                        **Blockchain Info:**
+                        - **Block:** #{record['block_index']}
+                        - **Hash:** `{record['block_hash'][:16]}...`
+                        """)
+        else:
+            st.info("No records found matching your search criteria.")
     else:
-        st.info("No medical records found. Please add some records first.")
+        st.info("No medical records found. Add some records to get started!")
 
 def blockchain_explorer_page():
-    """Blockchain explorer with detailed block information"""
-    st.markdown("## ⛓ Blockchain Explorer")
+    """Enhanced blockchain explorer with detailed block information"""
+    st.markdown("## ⛓️ Blockchain Explorer")
     
-    blockchain = st.session_state.blockchain
+    # Blockchain statistics
+    chain_length = len(st.session_state.blockchain.chain)
+    is_valid = st.session_state.blockchain.validate_chain()
     
-    st.markdown(f"### Chain Overview - {len(blockchain.chain)} blocks")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>⛓️ {chain_length}</h3>
+            <p>Total Blocks</p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Chain validation status
-    is_valid = blockchain.validate_chain()
-    if is_valid:
-        st.success("✅ Blockchain integrity verified - All blocks are valid!")
-    else:
-        st.error("❌ Blockchain integrity compromised - Invalid blocks detected!")
+    with col2:
+        status_color = "#28a745" if is_valid else "#dc3545"
+        status_text = "Valid" if is_valid else "Invalid"
+        st.markdown(f"""
+        <div class="metric-card" style="background: {status_color};">
+            <h3>🔐 {status_text}</h3>
+            <p>Chain Integrity</p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # Display each block
-    for i, block in enumerate(blockchain.chain):
-        is_genesis = i == 0
+    with col3:
+        last_block = st.session_state.blockchain.get_latest_block()
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>#{last_block.index}</h3>
+            <p>Latest Block</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Blockchain visualization
+    st.markdown("### 🔗 Blockchain Structure")
+    
+    # Show last 5 blocks in chain visualization
+    recent_blocks = st.session_state.blockchain.chain[-5:]
+    
+    chain_html = '<div class="block-chain">'
+    for block in recent_blocks:
+        block_type = "Genesis" if block.index == 0 else f"Block #{block.index}"
+        chain_html += f"""
+        <div class="block">
+            <strong>{block_type}</strong><br>
+            Hash: {block.hash[:8]}...<br>
+            Time: {block.timestamp[:10]}
+        </div>
+        """
+    chain_html += '</div>'
+    
+    st.markdown(chain_html, unsafe_allow_html=True)
+    
+    # Detailed block explorer
+    st.markdown("### 🔍 Block Details")
+    
+    selected_block_index = st.selectbox(
+        "Select a block to examine:",
+        range(len(st.session_state.blockchain.chain)),
+        format_func=lambda x: f"Block #{x} {'(Genesis)' if x == 0 else ''}"
+    )
+    
+    if selected_block_index is not None:
+        block = st.session_state.blockchain.chain[selected_block_index]
         
-        # Block styling
-        block_class = "genesis-block" if is_genesis else "blockchain-block"
-        block_icon = "🏗" if is_genesis else "📦"
-        block_title = "Genesis Block" if is_genesis else f"Block #{block.index}"
+        st.markdown(f"""
+        <div class="block-card">
+            <h3>🧱 Block #{block.index} Details</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with st.expander(f"{block_icon} {block_title} - {block.timestamp[:19]}"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**Block Information:**")
-                st.code(f"""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Block Metadata:**")
+            st.code(f"""
 Index: {block.index}
 Timestamp: {block.timestamp}
 Hash: {block.hash}
 Previous Hash: {block.previous_hash}
 Nonce: {block.nonce}
+            """)
+        
+        with col2:
+            st.markdown("**Block Data:**")
+            if block.index == 0:
+                st.json(block.data)
+            else:
+                # Format medical record data nicely
+                data = block.data
+                st.markdown(f"""
+                **Patient:** {data.get('patient_name', 'N/A')} ({data.get('patient_id', 'N/A')})  
+                **Age:** {data.get('age', 'N/A')} | **Gender:** {data.get('gender', 'N/A')}  
+                **Doctor:** {data.get('doctor', 'N/A')}  
+                **Hospital:** {data.get('hospital', 'N/A')}  
+                **Severity:** {data.get('severity', 'N/A')}  
+                **Diagnosis:** {data.get('diagnosis', 'N/A')}  
+                **Treatment:** {data.get('treatment', 'N/A')}
                 """)
-            
-            with col2:
-                st.markdown("**Block Data:**")
-                if is_genesis:
-                    st.json(block.data)
+    
+    # Chain validation section
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔍 Validate Blockchain Integrity", use_container_width=True):
+            with st.spinner("Validating blockchain..."):
+                time.sleep(1)  # Simulate validation time
+                is_valid = st.session_state.blockchain.validate_chain()
+                
+                if is_valid:
+                    st.success("✅ Blockchain integrity verified! All blocks are valid.")
                 else:
-                    # Display medical record data in a more readable format
-                    data = block.data
-                    if isinstance(data, dict) and "patient_name" in data:
-                        st.markdown(f"""
-                        **Patient:** {data.get('patient_name', 'N/A')} ({data.get('patient_id', 'N/A')})  
-                        **Age:** {data.get('age', 'N/A')} | **Gender:** {data.get('gender', 'N/A')}  
-                        **Hospital:** {data.get('hospital', 'N/A')}  
-                        **Doctor:** {data.get('doctor', 'N/A')}  
-                        **Severity:** {data.get('severity', 'N/A')}  
-                        **Diagnosis:** {data.get('diagnosis', 'N/A')}  
-                        **Treatment:** {data.get('treatment', 'N/A')}
-                        """)
-                    else:
-                        st.json(data)
+                    st.error("❌ Blockchain integrity compromised! Invalid blocks detected.")
+    
+    with col2:
+        if st.button("📊 Export Blockchain Data", use_container_width=True):
+            # Create downloadable JSON of the entire blockchain
+            blockchain_data = []
+            for block in st.session_state.blockchain.chain:
+                blockchain_data.append(block.to_dict())
             
-            # Block verification
-            st.markdown("---")
-            if i > 0:  # Skip genesis block validation
-                prev_hash_valid = block.previous_hash == blockchain.chain[i-1].hash
-                hash_valid = block.hash == block.calculate_hash()
-                
-                col3, col4 = st.columns(2)
-                with col3:
-                    status = "✅ Valid" if prev_hash_valid else "❌ Invalid"
-                    st.markdown(f"**Previous Hash Link:** {status}")
-                
-                with col4:
-                    status = "✅ Valid" if hash_valid else "❌ Invalid"
-                    st.markdown(f"**Hash Integrity:** {status}")
+            st.download_button(
+                label="💾 Download Blockchain JSON",
+                data=json.dumps(blockchain_data, indent=2),
+                file_name=f"ehr_blockchain_export_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
-# Auto-cleanup on app start
-cleanup_old_data()
-
-# Run the main application
+# Main application
 if __name__ == "__main__":
     main()
