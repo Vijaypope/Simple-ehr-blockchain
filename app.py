@@ -92,41 +92,19 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Blockchain visualization */
-    .block-chain {
-        display: flex;
-        align-items: center;
-        margin: 2rem 0;
-    }
-    
-    .block {
+    /* Block styling */
+    .blockchain-block {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 1rem;
         border-radius: 10px;
-        margin: 0 10px;
-        min-width: 150px;
-        text-align: center;
-        position: relative;
+        margin: 0.5rem 0;
+        border-left: 4px solid #4CAF50;
     }
     
-    .block::after {
-        content: '→';
-        position: absolute;
-        right: -25px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 1.5rem;
-        color: #667eea;
-    }
-    
-    .block:last-child::after {
-        display: none;
-    }
-    
-    /* Sidebar styling */
-    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+    .genesis-block {
+        background: linear-gradient(135deg, #FF6B6B 0%, #4ECDC4 100%);
+        border-left: 4px solid #FF6B6B;
     }
     
     /* Loading animation */
@@ -143,6 +121,16 @@ st.markdown("""
         height: 50px;
         animation: spin 1s linear infinite;
         margin: 2rem auto;
+    }
+    
+    /* Security features */
+    .security-badge {
+        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+        color: white;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -450,7 +438,7 @@ def main():
     
     # Show database status
     if st.session_state.get('loaded_from_db', False):
-        st.success("🗄️ Data loaded from database - your records are persistent!")
+        st.success("🗄 Data loaded from database - your records are persistent!")
     
     # Sidebar navigation with icons
     st.sidebar.markdown("### 🚀 Navigation")
@@ -458,12 +446,23 @@ def main():
         "🏠 Dashboard": "Dashboard",
         "📝 Add Record": "Add Record", 
         "🔍 Patient Records": "Patient Records",
-        "⛓️ Blockchain Explorer": "Blockchain Explorer",
-        "🗄️ Database Management": "Database Management"
+        "⛓ Blockchain Explorer": "Blockchain Explorer",
+        "🔐 Security Audit": "Security Audit",
+        "🗄 Database Management": "Database Management"
     }
     
     selected_page = st.sidebar.selectbox("Choose a page:", list(pages.keys()))
     page = pages[selected_page]
+    
+    # Blockchain info in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⛓ Blockchain Info")
+    st.sidebar.metric("Blocks", len(st.session_state.blockchain.chain))
+    st.sidebar.metric("Records", len(st.session_state.blockchain.get_all_records()))
+    
+    is_valid = st.session_state.blockchain.validate_chain()
+    status_color = "🟢" if is_valid else "🔴"
+    st.sidebar.markdown(f"**Status:** {status_color} {'Valid' if is_valid else 'Invalid'}")
     
     # Page routing
     if page == "Dashboard":
@@ -474,12 +473,107 @@ def main():
         patient_records_page()
     elif page == "Blockchain Explorer":
         blockchain_explorer_page()
+    elif page == "Security Audit":
+        security_audit_page()
     elif page == "Database Management":
         database_management_page()
 
+def security_audit_page():
+    """New security audit page"""
+    st.markdown("## 🔐 Security Audit")
+    
+    blockchain = st.session_state.blockchain
+    
+    # Validate blockchain
+    is_valid = blockchain.validate_chain()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if is_valid:
+            st.success("✅ Blockchain Integrity: VALID")
+        else:
+            st.error("❌ Blockchain Integrity: COMPROMISED")
+    
+    with col2:
+        st.info(f"🔗 Total Blocks: {len(blockchain.chain)}")
+    
+    # Security metrics
+    st.markdown("### 🛡 Security Metrics")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div class="metric-card">
+            <h3>🔒 Encryption</h3>
+            <p>SHA-256 Hashing</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>⛏ Difficulty</h3>
+            <p>Level {blockchain.difficulty}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="metric-card">
+            <h3>🔗 Immutable</h3>
+            <p>Tamper-Proof</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Block verification details
+    st.markdown("### 🔍 Block Verification")
+    
+    for i, block in enumerate(blockchain.chain):
+        is_genesis = i == 0
+        
+        # Verify this block
+        block_valid = True
+        validation_issues = []
+        
+        if not is_genesis:
+            if block.previous_hash != blockchain.chain[i-1].hash:
+                block_valid = False
+                validation_issues.append("Previous hash mismatch")
+        
+        if block.hash != block.calculate_hash():
+            block_valid = False
+            validation_issues.append("Hash calculation mismatch")
+        
+        status_icon = "✅" if block_valid else "❌"
+        block_type = "Genesis Block" if is_genesis else f"Block {block.index}"
+        
+        with st.expander(f"{status_icon} {block_type} - Hash: {block.hash[:16]}..."):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Index:** {block.index}")
+                st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
+                st.markdown(f"**Nonce:** {block.nonce}")
+                st.markdown(f"**Hash:** `{block.hash}`")
+            
+            with col2:
+                st.markdown(f"**Previous Hash:** `{block.previous_hash}`")
+                if validation_issues:
+                    st.error("Issues found:")
+                    for issue in validation_issues:
+                        st.error(f"- {issue}")
+                else:
+                    st.success("Block is valid")
+            
+            if not is_genesis and "patient_name" in block.data:
+                st.markdown("**Patient Data (Encrypted View):**")
+                st.json(block.data)
+
 def database_management_page():
-    """New page for database management"""
-    st.markdown("## 🗄️ Database Management")
+    """Database management page"""
+    st.markdown("## 🗄 Database Management")
     
     # Get database statistics
     db_stats = get_database_stats()
@@ -514,6 +608,7 @@ def database_management_page():
             if loaded_blockchain:
                 st.session_state.blockchain = loaded_blockchain
                 st.success("Blockchain loaded from database!")
+                st.rerun()
             else:
                 st.warning("No recent blockchain state found in database")
     
@@ -521,15 +616,15 @@ def database_management_page():
     
     # Cleanup operations
     st.markdown("### 🧹 Cleanup Operations")
-    st.warning("⚠️ Cleanup will remove data older than 7 days")
+    st.warning("⚠ Cleanup will remove data older than 7 days")
     
-    if st.button("🗑️ Cleanup Old Data", help="Remove data older than 7 days"):
+    if st.button("🗑 Cleanup Old Data", help="Remove data older than 7 days"):
         cleanup_old_data()
         st.success("Old data cleaned up successfully!")
     
     # Database info
     st.markdown("---")
-    st.markdown("### ℹ️ Database Information")
+    st.markdown("### ℹ Database Information")
     st.info("""
     **Database Features:**
     - 📊 Automatic persistence for at least 7 days
@@ -539,7 +634,7 @@ def database_management_page():
     - 🔄 Load/Save blockchain states
     
     **Files Created:**
-    - `ehr_blockchain.db` - SQLite database file
+    - ehr_blockchain.db - SQLite database file
     
     Your data is automatically saved when you add new records!
     """)
@@ -574,7 +669,7 @@ def dashboard_page():
     with col3:
         st.markdown(f"""
         <div class="metric-card">
-            <h3>⛓️ {len(st.session_state.blockchain.chain)}</h3>
+            <h3>⛓ {len(st.session_state.blockchain.chain)}</h3>
             <p>Blockchain Blocks</p>
         </div>
         """, unsafe_allow_html=True)
@@ -590,7 +685,7 @@ def dashboard_page():
         """, unsafe_allow_html=True)
     
     # Database status
-    st.markdown("### 🗄️ Database Status")
+    st.markdown("### 🗄 Database Status")
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Records in Database", db_stats['total_records_in_db'])
@@ -694,7 +789,7 @@ def add_record_page():
                     timestamp=str(datetime.datetime.now())
                 )
                 
-                st.markdown("### ⛏️ Mining Block...")
+                st.markdown("### ⛏ Mining Block...")
                 if st.session_state.blockchain.add_medical_record(record):
                     st.markdown("""
                     <div class="success-message">
@@ -729,10 +824,8 @@ def patient_records_page():
         else:
             filtered_records = records
         
-        # Filters
-        st.markdown("### 🎛️ Filters")
+        # Display filtering options
         col1, col2, col3 = st.columns(3)
-        
         with col1:
             severity_filter = st.selectbox("Filter by Severity:", ["All"] + list(set([r['severity'] for r in records])))
         with col2:
@@ -748,306 +841,110 @@ def patient_records_page():
         if doctor_filter != "All":
             filtered_records = [r for r in filtered_records if r['doctor'] == doctor_filter]
         
-        st.markdown(f"### 📋 Records Found: {len(filtered_records)}")
+        st.markdown(f"### 📋 Found {len(filtered_records)} record(s)")
         
         # Display records
-        for i, record in enumerate(filtered_records):
-            with st.expander(f"🏥 {record['patient_name']} ({record['patient_id']}) - {record['timestamp'][:19]}"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"**👤 Patient:** {record['patient_name']}")
-                    st.markdown(f"**🆔 ID:** {record['patient_id']}")
-                    st.markdown(f"**👶 Age:** {record['age']}")
-                    st.markdown(f"**⚥ Gender:** {record['gender']}")
-                    st.markdown(f"**🏥 Hospital:** {record['hospital']}")
-                
-                with col2:
-                    st.markdown(f"**👨‍⚕️ Doctor:** {record['doctor']}")
-                    st.markdown(f"**⚠️ Severity:** {record['severity']}")
-                    st.markdown(f"**#️⃣ Block:** {record['block_index']}")
-                    st.markdown(f"**🔗 Hash:** `{record['block_hash'][:16]}...`")
-                
-                st.markdown(f"**🔬 Diagnosis:** {record['diagnosis']}")
-                st.markdown(f"**💊 Treatment:** {record['treatment']}")
-        
-        # Export functionality
-        if filtered_records:
-            st.markdown("---")
-            df = pd.DataFrame(filtered_records)
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Records as CSV",
-                data=csv,
-                file_name=f"ehr_records_{datetime.date.today()}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+        for record in filtered_records:
+            severity_color = {
+                "Low": "#28a745",
+                "Moderate": "#ffc107", 
+                "High": "#fd7e14",
+                "Critical": "#dc3545"
+            }.get(record['severity'], "#6c757d")
+            
+            st.markdown(f"""
+            <div class="record-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h4>👤 {record['patient_name']} ({record['patient_id']})</h4>
+                    <span class="security-badge" style="background-color: {severity_color};">{record['severity']}</span>
+                </div>
+                <p><strong>Age:</strong> {record['age']} | <strong>Gender:</strong> {record['gender']}</p>
+                <p><strong>🏥 Hospital:</strong> {record['hospital']} | <strong>👨‍⚕️ Doctor:</strong> {record['doctor']}</p>
+                <p><strong>📊 Diagnosis:</strong> {record['diagnosis']}</p>
+                <p><strong>💊 Treatment:</strong> {record['treatment']}</p>
+                <p><strong>⏰ Recorded:</strong> {record['timestamp'][:19]}</p>
+                <p><strong>🔗 Block:</strong> #{record['block_index']} | <strong>Hash:</strong> {record['block_hash'][:16]}...</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
     else:
-        st.info("📝 No medical records found in the blockchain. Add some records to get started!")
+        st.info("No medical records found. Please add some records first.")
 
 def blockchain_explorer_page():
-    """Enhanced blockchain explorer with visualization"""
-    st.markdown("## ⛓️ Blockchain Explorer")
+    """Blockchain explorer with detailed block information"""
+    st.markdown("## ⛓ Blockchain Explorer")
     
     blockchain = st.session_state.blockchain
     
-    # Blockchain visualization
-    st.markdown("### 🔗 Blockchain Structure")
+    st.markdown(f"### Chain Overview - {len(blockchain.chain)} blocks")
     
-    # Create a simple blockchain visualization
-    blocks_data = []
-    for block in blockchain.chain:
-        blocks_data.append({
-            "Block": f"Block {block.index}",
-            "Hash": block.hash[:8] + "...",
-            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
-            "Timestamp": block.timestamp[:19]
-        })
-    
-    # Interactive blockchain chart
-    if len(blocks_data) > 1:
-        fig = go.Figure()
-        
-        x_pos = list(range(len(blocks_data))
-        y_pos = [0] * len(blocks_data)
-    
-    # Add block markers
-    fig.add_trace(go.Scatter(
-        x=x_pos,
-        y=y_pos,
-        mode='markers+text',
-        marker=dict(size=30, color='#667eea'),
-        text=[f"Block {block.index}" for block in blockchain.chain],
-        textposition="top center",
-        hovertext=[f"Hash: {block.hash[:16]}...<br>Timestamp: {block.timestamp[:19]}" 
-                   for block in blockchain.chain],
-        hoverinfo="text",
-        name="Blocks"
-    ))
-    
-    # Add connecting lines
-    for i in range(len(x_pos)-1):
-        fig.add_trace(go.Scatter(
-            x=[x_pos[i], x_pos[i+1]],
-            y=[0, 0],
-            mode='lines',
-            line=dict(color='#764ba2', width=2),
-            hoverinfo='none',
-            showlegend=False
-        ))
-    
-    # Update layout
-    fig.update_layout(
-        title="Blockchain Visualization",
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        height=300,
-        margin=dict(l=0, r=0, t=40, b=0),
-def blockchain_explorer_page():
-    """Enhanced blockchain explorer with visualization"""
-    st.markdown("## ⛓️ Blockchain Explorer")
-    
-    blockchain = st.session_state.blockchain
-    
-    # Blockchain visualization
-    st.markdown("### 🔗 Blockchain Structure")
-    
-    # Create a simple blockchain visualization
-    blocks_data = []
-    for block in blockchain.chain:
-        blocks_data.append({
-            "Block": f"Block {block.index}",
-            "Hash": block.hash[:8] + "...",
-            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
-            "Timestamp": block.timestamp[:19]
-def blockchain_explorer_page():
-    """Enhanced blockchain explorer with visualization"""
-    st.markdown("## ⛓️ Blockchain Explorer")
-    
-    blockchain = st.session_state.blockchain
-    
-    # Blockchain visualization
-    st.markdown("### 🔗 Blockchain Structure")
-    
-    # Create a simple blockchain visualization
-    blocks_data = []
-    for block in blockchain.chain:
-        blocks_data.append({
-            "Block": f"Block {block.index}",
-            "Hash": block.hash[:8] + "...",
-            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
-            "Timestamp": block.timestamp[:19]
-        })
-    
-    # Interactive blockchain chart
-    if len(blocks_data) > 1:
-        fig = go.Figure()
-        
-        x_pos = list(range(len(blocks_data)))
-        y_pos = [0] * len(blocks_data)
-    
-        # Add block markers
-        fig.add_trace(go.Scatter(
-            x=x_pos,
-            y=y_pos,
-            mode='markers+text',
-            marker=dict(size=30, color='#667eea'),
-            text=[f"Block {block.index}" for block in blockchain.chain],
-            textposition="top center",
-            hovertext=[f"Hash: {block.hash[:16]}...<br>Timestamp: {block.timestamp[:19]}" 
-                      for block in blockchain.chain],
-            hoverinfo="text",
-            name="Blocks"
-        ))
-    
-        # Add connecting lines
-        for i in range(len(x_pos)-1):
-            fig.add_trace(go.Scatter(
-                x=[x_pos[i], x_pos[i+1]],
-                y=[0, 0],
-                mode='lines',
-                line=dict(color='#764ba2', width=2),
-                hoverinfo='none',
-                showlegend=False
-            ))
-    
-        # Update layout
-        fig.update_layout(
-            title="Blockchain Visualization",
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=300,
-            margin=dict(l=0, r=0, t=40, b=0),
-            plot_bgcolor='rgba(0,0,0,0)'
-        )
-    
-        st.plotly_chart(fig, use_container_width=True)
+    # Chain validation status
+    is_valid = blockchain.validate_chain()
+    if is_valid:
+        st.success("✅ Blockchain integrity verified - All blocks are valid!")
     else:
-        st.info("Only genesis block exists. Add some records to grow the blockchain!")
-
-def blockchain_explorer_page():
-    """Enhanced blockchain explorer with visualization"""
-    st.markdown("## ⛓️ Blockchain Explorer")
+        st.error("❌ Blockchain integrity compromised - Invalid blocks detected!")
     
-    blockchain = st.session_state.blockchain
-    
-    # Blockchain visualization
-    st.markdown("### 🔗 Blockchain Structure")
-    
-    # Create a simple blockchain visualization
-    blocks_data = []
-    for block in blockchain.chain:
-        blocks_data.append({
-            "Block": f"Block {block.index}",
-            "Hash": block.hash[:8] + "...",
-            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
-            "Timestamp": block.timestamp[:19]
-        })
-    
-    # Interactive blockchain chart
-    if len(blocks_data) > 1:
-        fig = go.Figure()
+    # Display each block
+    for i, block in enumerate(blockchain.chain):
+        is_genesis = i == 0
         
-        x_pos = list(range(len(blocks_data)))
-        y_pos = [0] * len(blocks_data)
-    
-        # Add block markers
-        fig.add_trace(go.Scatter(
-            x=x_pos,
-            y=y_pos,
-            mode='markers+text',
-            marker=dict(size=30, color='#667eea'),
-            text=[f"Block {block.index}" for block in blockchain.chain],
-            textposition="top center",
-            hovertext=[f"Hash: {block.hash[:16]}...<br>Timestamp: {block.timestamp[:19]}" 
-                      for block in blockchain.chain],
-            hoverinfo="text",
-            name="Blocks"
-        ))
-    
-        # Add connecting lines
-        for i in range(len(x_pos)-1):
-            fig.add_trace(go.Scatter(
-                x=[x_pos[i], x_pos[i+1]],
-                y=[0, 0],
-                mode='lines',
-                line=dict(color='#764ba2', width=2),
-                hoverinfo='none',
-                showlegend=False
-            ))
-    
-        # Update layout
-        fig.update_layout(
-            title="Blockchain Visualization",
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=300,
-            margin=dict(l=0, r=0, t=40, b=0),
-            plot_bgcolor='rgba(0,0,0,0)'
-        )
-    
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Only genesis block exists. Add some records to grow the blockchain!")
-
-    # Block details section
-    st.markdown("### 📦 Block Details")
-
-    if len(blockchain.chain) > 1:
-        selected_block = st.selectbox(
-            "Select a block to inspect:",
-            options=[f"Block {block.index}" for block in blockchain.chain],
-            index=len(blockchain.chain)-1  # Default to latest block
-        )
-    
-        block_index = int(selected_block.split()[1])
-        block = blockchain.chain[block_index]
-    
-        # Display block info in columns
-        col1, col2 = st.columns(2)
-    
-        with col1:
-            st.markdown(f"**Block Index:** {block.index}")
-            st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
-            st.markdown(f"**Nonce:** {block.nonce}")
-    
-        with col2:
-            st.markdown(f"**Previous Hash:** `{block.previous_hash[:16]}...`")
-            st.markdown(f"**Current Hash:** `{block.hash[:16]}...`")
-            st.markdown(f"**Valid:** {'✅' if block.hash == block.calculate_hash() else '❌'}")
-    
-        # Display block data
-        st.markdown("### 📄 Block Data")
-    
-        if block.index == 0:
-            st.json(block.data)
-        else:
-            # Medical record display
-            record = block.data
-            st.markdown(f"**👤 Patient:** {record['patient_name']} ({record['patient_id']})")
-            st.markdown(f"**🏥 Hospital:** {record['hospital']}")
-            st.markdown(f"**👨‍⚕️ Doctor:** {record['doctor']}")
-            st.markdown(f"**⚠️ Severity:** {record['severity']}")
-            st.markdown(f"**🔬 Diagnosis:** {record['diagnosis']}")
-            st.markdown(f"**💊 Treatment:** {record['treatment']}")
+        # Block styling
+        block_class = "genesis-block" if is_genesis else "blockchain-block"
+        block_icon = "🏗" if is_genesis else "📦"
+        block_title = "Genesis Block" if is_genesis else f"Block #{block.index}"
         
-            # Verification
-            st.markdown("---")
-            st.markdown("### 🔍 Verification")
-        
-            if st.button("Verify Block Hash"):
-                if block.hash == block.calculate_hash():
-                    st.success("✅ Block hash is valid!")
+        with st.expander(f"{block_icon} {block_title} - {block.timestamp[:19]}"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Block Information:**")
+                st.code(f"""
+Index: {block.index}
+Timestamp: {block.timestamp}
+Hash: {block.hash}
+Previous Hash: {block.previous_hash}
+Nonce: {block.nonce}
+                """)
+            
+            with col2:
+                st.markdown("**Block Data:**")
+                if is_genesis:
+                    st.json(block.data)
                 else:
-                    st.error("❌ Block hash is invalid!")
-        
-            if st.button("Verify Chain Integrity"):
-                if blockchain.validate_chain():
-                    st.success("✅ Blockchain integrity is valid!")
-                else:
-                    st.error("❌ Blockchain integrity compromised!")
-    else:
-        st.info("Only genesis block exists. Add some records to see medical record blocks.")
+                    # Display medical record data in a more readable format
+                    data = block.data
+                    if isinstance(data, dict) and "patient_name" in data:
+                        st.markdown(f"""
+                        **Patient:** {data.get('patient_name', 'N/A')} ({data.get('patient_id', 'N/A')})  
+                        **Age:** {data.get('age', 'N/A')} | **Gender:** {data.get('gender', 'N/A')}  
+                        **Hospital:** {data.get('hospital', 'N/A')}  
+                        **Doctor:** {data.get('doctor', 'N/A')}  
+                        **Severity:** {data.get('severity', 'N/A')}  
+                        **Diagnosis:** {data.get('diagnosis', 'N/A')}  
+                        **Treatment:** {data.get('treatment', 'N/A')}
+                        """)
+                    else:
+                        st.json(data)
+            
+            # Block verification
+            st.markdown("---")
+            if i > 0:  # Skip genesis block validation
+                prev_hash_valid = block.previous_hash == blockchain.chain[i-1].hash
+                hash_valid = block.hash == block.calculate_hash()
+                
+                col3, col4 = st.columns(2)
+                with col3:
+                    status = "✅ Valid" if prev_hash_valid else "❌ Invalid"
+                    st.markdown(f"**Previous Hash Link:** {status}")
+                
+                with col4:
+                    status = "✅ Valid" if hash_valid else "❌ Invalid"
+                    st.markdown(f"**Hash Integrity:** {status}")
+
+# Auto-cleanup on app start
+cleanup_old_data()
+
+# Run the main application
 if __name__ == "__main__":
     main()
