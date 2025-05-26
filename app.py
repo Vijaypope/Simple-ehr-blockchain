@@ -809,7 +809,7 @@ def blockchain_explorer_page():
     if len(blocks_data) > 1:
         fig = go.Figure()
         
-        x_pos = list(range(len(blocks_data)))
+        x_pos = list(range(len(blocks_data))
         y_pos = [0] * len(blocks_data)
     
     # Add block markers
