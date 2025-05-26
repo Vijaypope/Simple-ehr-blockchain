@@ -1,4 +1,6 @@
-streamlit==1.28.1
-pandas==2.0.3
-plotly==5.17.0
-hashlib2==1.0.1
+streamlit>=1.28.0
+pandas>=1.5.0
+plotly>=5.15.0
+hashlib2>=1.0.1
+sqlite3
+pickle-mixin>=1.0.2
