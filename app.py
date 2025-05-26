@@ -926,6 +926,71 @@ def blockchain_explorer_page():
     else:
         st.info("Only genesis block exists. Add some records to grow the blockchain!")
 
+def blockchain_explorer_page():
+    """Enhanced blockchain explorer with visualization"""
+    st.markdown("## ⛓️ Blockchain Explorer")
+    
+    blockchain = st.session_state.blockchain
+    
+    # Blockchain visualization
+    st.markdown("### 🔗 Blockchain Structure")
+    
+    # Create a simple blockchain visualization
+    blocks_data = []
+    for block in blockchain.chain:
+        blocks_data.append({
+            "Block": f"Block {block.index}",
+            "Hash": block.hash[:8] + "...",
+            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
+            "Timestamp": block.timestamp[:19]
+        })
+    
+    # Interactive blockchain chart
+    if len(blocks_data) > 1:
+        fig = go.Figure()
+        
+        x_pos = list(range(len(blocks_data)))
+        y_pos = [0] * len(blocks_data)
+    
+        # Add block markers
+        fig.add_trace(go.Scatter(
+            x=x_pos,
+            y=y_pos,
+            mode='markers+text',
+            marker=dict(size=30, color='#667eea'),
+            text=[f"Block {block.index}" for block in blockchain.chain],
+            textposition="top center",
+            hovertext=[f"Hash: {block.hash[:16]}...<br>Timestamp: {block.timestamp[:19]}" 
+                      for block in blockchain.chain],
+            hoverinfo="text",
+            name="Blocks"
+        ))
+    
+        # Add connecting lines
+        for i in range(len(x_pos)-1):
+            fig.add_trace(go.Scatter(
+                x=[x_pos[i], x_pos[i+1]],
+                y=[0, 0],
+                mode='lines',
+                line=dict(color='#764ba2', width=2),
+                hoverinfo='none',
+                showlegend=False
+            ))
+    
+        # Update layout
+        fig.update_layout(
+            title="Blockchain Visualization",
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            height=300,
+            margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+    
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Only genesis block exists. Add some records to grow the blockchain!")
+
     # Block details section
     st.markdown("### 📦 Block Details")
 
@@ -984,3 +1049,5 @@ def blockchain_explorer_page():
                     st.error("❌ Blockchain integrity compromised!")
     else:
         st.info("Only genesis block exists. Add some records to see medical record blocks.")
+if __name__ == "__main__":
+    main()
