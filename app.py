@@ -287,4 +287,4 @@ def blockchain_info_page():
                 st.json(block.to_dict())
 
 if __name__ == "__main__":
-    main(
+    main()
