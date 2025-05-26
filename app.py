@@ -810,7 +810,7 @@ def blockchain_explorer_page():
         fig = go.Figure()
         
         x_pos = list(range(len(blocks_data)))
-            y_pos = [0] * len(blocks_data)
+        y_pos = [0] * len(blocks_data)
     
     # Add block markers
     fig.add_trace(go.Scatter(
@@ -848,64 +848,64 @@ def blockchain_explorer_page():
     )
     
     st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("Only genesis block exists. Add some records to grow the blockchain!")
+    else:
+        st.info("Only genesis block exists. Add some records to grow the blockchain!")
 
 # Block details section
-st.markdown("### 📦 Block Details")
+    st.markdown("### 📦 Block Details")
 
-if len(blockchain.chain) > 1:
-    selected_block = st.selectbox(
-        "Select a block to inspect:",
-        options=[f"Block {block.index}" for block in blockchain.chain],
-        index=len(blockchain.chain)-1  # Default to latest block
-    )
+    if len(blockchain.chain) > 1:
+        selected_block = st.selectbox(
+            "Select a block to inspect:",
+            options=[f"Block {block.index}" for block in blockchain.chain],
+            index=len(blockchain.chain)-1  # Default to latest block
+        )
     
-    block_index = int(selected_block.split()[1])
-    block = blockchain.chain[block_index]
+        block_index = int(selected_block.split()[1])
+        block = blockchain.chain[block_index]
     
-    # Display block info in columns
-    col1, col2 = st.columns(2)
+        # Display block info in columns
+        col1, col2 = st.columns(2)
     
-    with col1:
-        st.markdown(f"**Block Index:** {block.index}")
-        st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
-        st.markdown(f"**Nonce:** {block.nonce}")
+        with col1:
+            st.markdown(f"**Block Index:** {block.index}")
+            st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
+            st.markdown(f"**Nonce:** {block.nonce}")
     
-    with col2:
-        st.markdown(f"**Previous Hash:** `{block.previous_hash[:16]}...`")
-        st.markdown(f"**Current Hash:** `{block.hash[:16]}...`")
-        st.markdown(f"**Valid:** {'✅' if block.hash == block.calculate_hash() else '❌'}")
+        with col2:
+            st.markdown(f"**Previous Hash:** `{block.previous_hash[:16]}...`")
+            st.markdown(f"**Current Hash:** `{block.hash[:16]}...`")
+            st.markdown(f"**Valid:** {'✅' if block.hash == block.calculate_hash() else '❌'}")
     
-    # Display block data
-    st.markdown("### 📄 Block Data")
+        # Display block data
+        st.markdown("### 📄 Block Data")
     
-    if block.index == 0:
-        st.json(block.data)
+        if block.index == 0:
+            st.json(block.data)
+        else:
+            # Medical record display
+            record = block.data
+            st.markdown(f"**👤 Patient:** {record['patient_name']} ({record['patient_id']})")
+            st.markdown(f"**🏥 Hospital:** {record['hospital']}")
+            st.markdown(f"**👨‍⚕️ Doctor:** {record['doctor']}")
+            st.markdown(f"**⚠️ Severity:** {record['severity']}")
+            st.markdown(f"**🔬 Diagnosis:** {record['diagnosis']}")
+            st.markdown(f"**💊 Treatment:** {record['treatment']}")
+        
+            # Verification
+            st.markdown("---")
+            st.markdown("### 🔍 Verification")
+        
+            if st.button("Verify Block Hash"):
+                if block.hash == block.calculate_hash():
+                    st.success("✅ Block hash is valid!")
+                else:
+                    st.error("❌ Block hash is invalid!")
+        
+            if st.button("Verify Chain Integrity"):
+                if blockchain.validate_chain():
+                    st.success("✅ Blockchain integrity is valid!")
+                else:
+                    st.error("❌ Blockchain integrity compromised!")
     else:
-        # Medical record display
-        record = block.data
-        st.markdown(f"**👤 Patient:** {record['patient_name']} ({record['patient_id']})")
-        st.markdown(f"**🏥 Hospital:** {record['hospital']}")
-        st.markdown(f"**👨‍⚕️ Doctor:** {record['doctor']}")
-        st.markdown(f"**⚠️ Severity:** {record['severity']}")
-        st.markdown(f"**🔬 Diagnosis:** {record['diagnosis']}")
-        st.markdown(f"**💊 Treatment:** {record['treatment']}")
-        
-        # Verification
-        st.markdown("---")
-        st.markdown("### 🔍 Verification")
-        
-        if st.button("Verify Block Hash"):
-            if block.hash == block.calculate_hash():
-                st.success("✅ Block hash is valid!")
-            else:
-                st.error("❌ Block hash is invalid!")
-        
-        if st.button("Verify Chain Integrity"):
-            if blockchain.validate_chain():
-                st.success("✅ Blockchain integrity is valid!")
-            else:
-                st.error("❌ Blockchain integrity compromised!")
-else:
-    st.info("Only genesis block exists. Add some records to see medical record blocks.")
+        st.info("Only genesis block exists. Add some records to see medical record blocks.")
