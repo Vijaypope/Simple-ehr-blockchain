@@ -8,6 +8,8 @@ import pandas as pd
 import time
 import plotly.express as px
 import plotly.graph_objects as go
+import sqlite3
+import pickle
 
 # Configure Streamlit page
 st.set_page_config(
@@ -145,6 +147,134 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# SQLite Database Functions
+def init_database():
+    """Initialize SQLite database for blockchain storage"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    # Create table for blockchain data
+    c.execute('''CREATE TABLE IF NOT EXISTS blockchain_data
+                 (id INTEGER PRIMARY KEY,
+                  blockchain_state BLOB,
+                  timestamp DATETIME,
+                  created_date DATE)''')
+    
+    # Create table for individual medical records (for easier querying)
+    c.execute('''CREATE TABLE IF NOT EXISTS medical_records
+                 (id INTEGER PRIMARY KEY,
+                  patient_id TEXT,
+                  patient_name TEXT,
+                  age INTEGER,
+                  gender TEXT,
+                  diagnosis TEXT,
+                  treatment TEXT,
+                  doctor TEXT,
+                  hospital TEXT,
+                  severity TEXT,
+                  block_index INTEGER,
+                  block_hash TEXT,
+                  timestamp DATETIME,
+                  created_date DATE)''')
+    
+    conn.commit()
+    conn.close()
+
+def save_blockchain_to_db(blockchain):
+    """Save the entire blockchain state to database"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    # Serialize the blockchain object
+    blockchain_data = pickle.dumps(blockchain)
+    current_time = datetime.datetime.now()
+    current_date = datetime.date.today()
+    
+    # Insert new blockchain state
+    c.execute("INSERT INTO blockchain_data (blockchain_state, timestamp, created_date) VALUES (?, ?, ?)",
+              (blockchain_data, current_time, current_date))
+    
+    conn.commit()
+    conn.close()
+
+def load_blockchain_from_db():
+    """Load the most recent blockchain state from database"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    # Get the most recent blockchain state
+    week_ago = datetime.date.today() - datetime.timedelta(days=7)
+    c.execute("SELECT blockchain_state FROM blockchain_data WHERE created_date > ? ORDER BY timestamp DESC LIMIT 1", (week_ago,))
+    result = c.fetchone()
+    
+    conn.close()
+    
+    if result:
+        return pickle.loads(result[0])
+    else:
+        return None
+
+def save_medical_record_to_db(record_data, block_index, block_hash):
+    """Save individual medical record to database for easy querying"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    current_time = datetime.datetime.now()
+    current_date = datetime.date.today()
+    
+    c.execute("""INSERT INTO medical_records 
+                 (patient_id, patient_name, age, gender, diagnosis, treatment, 
+                  doctor, hospital, severity, block_index, block_hash, timestamp, created_date)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+              (record_data['patient_id'], record_data['patient_name'], record_data['age'],
+               record_data['gender'], record_data['diagnosis'], record_data['treatment'],
+               record_data['doctor'], record_data['hospital'], record_data['severity'],
+               block_index, block_hash, current_time, current_date))
+    
+    conn.commit()
+    conn.close()
+
+def cleanup_old_data():
+    """Remove data older than 7 days"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    week_ago = datetime.date.today() - datetime.timedelta(days=7)
+    
+    # Clean up old blockchain states (keep only the most recent one within the week)
+    c.execute("DELETE FROM blockchain_data WHERE created_date < ?", (week_ago,))
+    
+    # Clean up old medical records
+    c.execute("DELETE FROM medical_records WHERE created_date < ?", (week_ago,))
+    
+    conn.commit()
+    conn.close()
+
+def get_database_stats():
+    """Get statistics about the database"""
+    conn = sqlite3.connect('ehr_blockchain.db')
+    c = conn.cursor()
+    
+    # Get record count
+    c.execute("SELECT COUNT(*) FROM medical_records")
+    record_count = c.fetchone()[0]
+    
+    # Get blockchain states count
+    c.execute("SELECT COUNT(*) FROM blockchain_data")
+    blockchain_states = c.fetchone()[0]
+    
+    # Get oldest record date
+    c.execute("SELECT MIN(created_date) FROM medical_records")
+    oldest_record = c.fetchone()[0]
+    
+    conn.close()
+    
+    return {
+        'total_records_in_db': record_count,
+        'blockchain_states': blockchain_states,
+        'oldest_record_date': oldest_record
+    }
+
 @dataclass
 class MedicalRecord:
     """Enhanced medical record structure"""
@@ -242,6 +372,11 @@ class EnhancedEHRBlockchain:
                 previous_hash=self.get_latest_block().hash
             )
             self.chain.append(new_block)
+            
+            # Save to database
+            save_medical_record_to_db(record.to_dict(), new_block.index, new_block.hash)
+            save_blockchain_to_db(self)
+            
             mining_placeholder.empty()
             return True
         except Exception as e:
@@ -294,13 +429,28 @@ class EnhancedEHRBlockchain:
         
         return True
 
-# Initialize blockchain in session state
+# Initialize database and blockchain in session state
+if 'db_initialized' not in st.session_state:
+    init_database()
+    st.session_state.db_initialized = True
+
 if 'blockchain' not in st.session_state:
-    st.session_state.blockchain = EnhancedEHRBlockchain()
+    # Try to load blockchain from database first
+    loaded_blockchain = load_blockchain_from_db()
+    if loaded_blockchain:
+        st.session_state.blockchain = loaded_blockchain
+        st.session_state.loaded_from_db = True
+    else:
+        st.session_state.blockchain = EnhancedEHRBlockchain()
+        st.session_state.loaded_from_db = False
 
 def main():
     # Animated header
     st.markdown('<h1 class="animated-header">🏥 EHR Blockchain System</h1>', unsafe_allow_html=True)
+    
+    # Show database status
+    if st.session_state.get('loaded_from_db', False):
+        st.success("🗄️ Data loaded from database - your records are persistent!")
     
     # Sidebar navigation with icons
     st.sidebar.markdown("### 🚀 Navigation")
@@ -308,7 +458,8 @@ def main():
         "🏠 Dashboard": "Dashboard",
         "📝 Add Record": "Add Record", 
         "🔍 Patient Records": "Patient Records",
-        "⛓️ Blockchain Explorer": "Blockchain Explorer"
+        "⛓️ Blockchain Explorer": "Blockchain Explorer",
+        "🗄️ Database Management": "Database Management"
     }
     
     selected_page = st.sidebar.selectbox("Choose a page:", list(pages.keys()))
@@ -323,6 +474,75 @@ def main():
         patient_records_page()
     elif page == "Blockchain Explorer":
         blockchain_explorer_page()
+    elif page == "Database Management":
+        database_management_page()
+
+def database_management_page():
+    """New page for database management"""
+    st.markdown("## 🗄️ Database Management")
+    
+    # Get database statistics
+    db_stats = get_database_stats()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("📊 Records in DB", db_stats['total_records_in_db'])
+    
+    with col2:
+        st.metric("💾 Blockchain States", db_stats['blockchain_states'])
+    
+    with col3:
+        if db_stats['oldest_record_date']:
+            st.metric("📅 Oldest Record", db_stats['oldest_record_date'])
+        else:
+            st.metric("📅 Oldest Record", "No records")
+    
+    st.markdown("---")
+    
+    # Database operations
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("💾 Save Current State", help="Save current blockchain state to database"):
+            save_blockchain_to_db(st.session_state.blockchain)
+            st.success("Blockchain state saved to database!")
+    
+    with col2:
+        if st.button("🔄 Load from Database", help="Load the most recent blockchain state"):
+            loaded_blockchain = load_blockchain_from_db()
+            if loaded_blockchain:
+                st.session_state.blockchain = loaded_blockchain
+                st.success("Blockchain loaded from database!")
+            else:
+                st.warning("No recent blockchain state found in database")
+    
+    st.markdown("---")
+    
+    # Cleanup operations
+    st.markdown("### 🧹 Cleanup Operations")
+    st.warning("⚠️ Cleanup will remove data older than 7 days")
+    
+    if st.button("🗑️ Cleanup Old Data", help="Remove data older than 7 days"):
+        cleanup_old_data()
+        st.success("Old data cleaned up successfully!")
+    
+    # Database info
+    st.markdown("---")
+    st.markdown("### ℹ️ Database Information")
+    st.info("""
+    **Database Features:**
+    - 📊 Automatic persistence for at least 7 days
+    - 💾 Blockchain state serialization
+    - 🔍 Individual record storage for fast queries
+    - 🧹 Automatic cleanup of old data
+    - 🔄 Load/Save blockchain states
+    
+    **Files Created:**
+    - `ehr_blockchain.db` - SQLite database file
+    
+    Your data is automatically saved when you add new records!
+    """)
 
 def dashboard_page():
     """Enhanced dashboard with statistics and visualizations"""
@@ -330,6 +550,7 @@ def dashboard_page():
     
     # Get statistics
     stats = st.session_state.blockchain.get_statistics()
+    db_stats = get_database_stats()
     
     # Metrics row
     col1, col2, col3, col4 = st.columns(4)
@@ -367,6 +588,14 @@ def dashboard_page():
             <p>Chain Status</p>
         </div>
         """, unsafe_allow_html=True)
+    
+    # Database status
+    st.markdown("### 🗄️ Database Status")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Records in Database", db_stats['total_records_in_db'])
+    with col2:
+        st.metric("Saved States", db_stats['blockchain_states'])
     
     # Visualizations
     if stats['total_records'] > 0:
@@ -469,7 +698,7 @@ def add_record_page():
                 if st.session_state.blockchain.add_medical_record(record):
                     st.markdown("""
                     <div class="success-message">
-                        ✅ Medical record successfully added to blockchain!
+                        ✅ Medical record successfully added to blockchain and saved to database!
                     </div>
                     """, unsafe_allow_html=True)
                     st.balloons()
@@ -581,88 +810,102 @@ def blockchain_explorer_page():
         fig = go.Figure()
         
         x_pos = list(range(len(blocks_data)))
-        y_pos = [0] * len(blocks_data)
-        
-        # Add blocks
+            y_pos = [0] * len(blocks_data)
+    
+    # Add block markers
+    fig.add_trace(go.Scatter(
+        x=x_pos,
+        y=y_pos,
+        mode='markers+text',
+        marker=dict(size=30, color='#667eea'),
+        text=[f"Block {block.index}" for block in blockchain.chain],
+        textposition="top center",
+        hovertext=[f"Hash: {block.hash[:16]}...<br>Timestamp: {block.timestamp[:19]}" 
+                   for block in blockchain.chain],
+        hoverinfo="text",
+        name="Blocks"
+    ))
+    
+    # Add connecting lines
+    for i in range(len(x_pos)-1):
         fig.add_trace(go.Scatter(
-            x=x_pos,
-            y=y_pos,
-            mode='markers+text',
-            marker=dict(size=30, color='lightblue', line=dict(width=2, color='darkblue')),
-            text=[f"Block {i}" for i in range(len(blocks_data))],
-            textposition="middle center",
-            name="Blocks"
+            x=[x_pos[i], x_pos[i+1]],
+            y=[0, 0],
+            mode='lines',
+            line=dict(color='#764ba2', width=2),
+            hoverinfo='none',
+            showlegend=False
         ))
-        
-        # Add connections
-        for i in range(len(x_pos)-1):
-            fig.add_shape(
-                type="line",
-                x0=x_pos[i], y0=0, x1=x_pos[i+1], y1=0,
-                line=dict(color="blue", width=3, dash="solid"),
-            )
-            fig.add_annotation(
-                x=(x_pos[i] + x_pos[i+1])/2, y=0.1,
-                text="→", showarrow=False,
-                font=dict(size=20, color="blue")
-            )
-        
-        fig.update_layout(
-            title="Blockchain Structure Visualization",
-            showlegend=False,
-            height=200,
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.3, 0.3])
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
     
-    # Block details
-    st.markdown("### 📋 Block Details")
+    # Update layout
+    fig.update_layout(
+        title="Blockchain Visualization",
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        height=300,
+        margin=dict(l=0, r=0, t=40, b=0),
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
     
-    # Block selector
-    block_options = [f"Block {i} ({'Genesis' if i == 0 else 'Medical Record'})" for i in range(len(blockchain.chain))]
-    selected_block_idx = st.selectbox("Select a block to inspect:", range(len(block_options)), format_func=lambda x: block_options[x])
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Only genesis block exists. Add some records to grow the blockchain!")
+
+# Block details section
+st.markdown("### 📦 Block Details")
+
+if len(blockchain.chain) > 1:
+    selected_block = st.selectbox(
+        "Select a block to inspect:",
+        options=[f"Block {block.index}" for block in blockchain.chain],
+        index=len(blockchain.chain)-1  # Default to latest block
+    )
     
-    if selected_block_idx is not None:
-        block = blockchain.chain[selected_block_idx]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### Block Information")
-            st.json({
-                "Index": block.index,
-                "Timestamp": block.timestamp,
-                "Hash": block.hash,
-                "Previous Hash": block.previous_hash,
-                "Nonce": block.nonce
-            })
-        
-        with col2:
-            st.markdown("#### Block Data")
-            if block.index == 0:
-                st.info("This is the Genesis Block")
-            else:
-                st.json(block.data)
+    block_index = int(selected_block.split()[1])
+    block = blockchain.chain[block_index]
     
-    # Chain validation
-    st.markdown("---")
+    # Display block info in columns
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🔍 Validate Blockchain", use_container_width=True):
-            with st.spinner("Validating blockchain integrity..."):
-                time.sleep(1)  # Simulate validation time
-                is_valid = blockchain.validate_chain()
-                if is_valid:
-                    st.success("✅ Blockchain is valid and secure!")
-                else:
-                    st.error("❌ Blockchain integrity compromised!")
+        st.markdown(f"**Block Index:** {block.index}")
+        st.markdown(f"**Timestamp:** {block.timestamp[:19]}")
+        st.markdown(f"**Nonce:** {block.nonce}")
     
     with col2:
-        st.metric("Chain Length", len(blockchain.chain))
-        st.metric("Difficulty", blockchain.difficulty)
-
-if __name__ == "__main__":
-    main()
+        st.markdown(f"**Previous Hash:** `{block.previous_hash[:16]}...`")
+        st.markdown(f"**Current Hash:** `{block.hash[:16]}...`")
+        st.markdown(f"**Valid:** {'✅' if block.hash == block.calculate_hash() else '❌'}")
+    
+    # Display block data
+    st.markdown("### 📄 Block Data")
+    
+    if block.index == 0:
+        st.json(block.data)
+    else:
+        # Medical record display
+        record = block.data
+        st.markdown(f"**👤 Patient:** {record['patient_name']} ({record['patient_id']})")
+        st.markdown(f"**🏥 Hospital:** {record['hospital']}")
+        st.markdown(f"**👨‍⚕️ Doctor:** {record['doctor']}")
+        st.markdown(f"**⚠️ Severity:** {record['severity']}")
+        st.markdown(f"**🔬 Diagnosis:** {record['diagnosis']}")
+        st.markdown(f"**💊 Treatment:** {record['treatment']}")
+        
+        # Verification
+        st.markdown("---")
+        st.markdown("### 🔍 Verification")
+        
+        if st.button("Verify Block Hash"):
+            if block.hash == block.calculate_hash():
+                st.success("✅ Block hash is valid!")
+            else:
+                st.error("❌ Block hash is invalid!")
+        
+        if st.button("Verify Chain Integrity"):
+            if blockchain.validate_chain():
+                st.success("✅ Blockchain integrity is valid!")
+            else:
+                st.error("❌ Blockchain integrity compromised!")
+else:
+    st.info("Only genesis block exists. Add some records to see medical record blocks.")
