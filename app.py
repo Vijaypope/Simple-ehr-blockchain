@@ -861,6 +861,23 @@ def blockchain_explorer_page():
             "Hash": block.hash[:8] + "...",
             "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
             "Timestamp": block.timestamp[:19]
+def blockchain_explorer_page():
+    """Enhanced blockchain explorer with visualization"""
+    st.markdown("## ⛓️ Blockchain Explorer")
+    
+    blockchain = st.session_state.blockchain
+    
+    # Blockchain visualization
+    st.markdown("### 🔗 Blockchain Structure")
+    
+    # Create a simple blockchain visualization
+    blocks_data = []
+    for block in blockchain.chain:
+        blocks_data.append({
+            "Block": f"Block {block.index}",
+            "Hash": block.hash[:8] + "...",
+            "Previous": block.previous_hash[:8] + "..." if block.previous_hash != "0" else "Genesis",
+            "Timestamp": block.timestamp[:19]
         })
     
     # Interactive blockchain chart
